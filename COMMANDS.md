@@ -1,120 +1,178 @@
 # Comandos habituales — SurveyApp
 
-## Paso a paso: cómo encaja todo (mapa mental)
+## 1. Carpeta del proyecto
 
-1. **Supabase** almacena tablas (`surveys`, `questions`, `options`, `responses`).
-2. **Tu backend** (Express en local o la función serverless en **Vercel**) usa `@supabase/supabase-js` con las variables `SUPABASE_URL` y una clave (`SUPABASE_ANON_KEY` o `SUPABASE_SERVICE_ROLE_KEY`).
-3. **El frontend** (React) **no** habla con Supabase directamente: llama a tu API (`/api/...`). El proxy de Vite en desarrollo reenvía `/api` a `http://localhost:3001`.
+| Qué | Dónde |
+|-----|--------|
+| **Repositorio Git** (`.git`) | Dentro de **`surveyapp/`**, no en la carpeta padre. |
+| **Comandos `npm` del backend** | Desde **`surveyapp/`** (raíz del repo). |
+| **Comandos del cliente (Vite)** | `cd client` o scripts que ya hacen `cd client` desde la raíz. |
 
-Por tanto: **ver y editar datos “como hoja de cálculo”** se hace en el **panel de Supabase** (Table Editor). **Manipular desde la app** hoy significa: los usuarios **rellenan encuestas** y el backend **inserta filas** en `responses` (y necesitas filas previas en `surveys` / `questions` / `options`). **Crear encuestas nuevas desde la UI de administración** aún no está implementado contra Supabase (solo hay un POST de demostración en memoria); puedes crearlas en el SQL Editor o ampliando la API después.
+Ejemplo de rutas típicas:
 
----
+```text
+.../surveyapp-main/surveyapp/     ← aquí: git, npm install, npm run dev
+.../surveyapp-main/surveyapp/client/
+```
 
-## Dónde “ver” la base de datos
-
-| Sitio | Para qué sirve |
-|--------|----------------|
-| **Supabase Dashboard** → **Table Editor** | Ver filas, filtrar, editar a mano (como una tabla). |
-| **Supabase** → **SQL Editor** | Ejecutar `schema.sql`, consultas, seeds. |
-| **Tu API** `GET /api/surveys` | Lo que el frontend muestra como listado de encuestas (viene de la BD si está conectada). |
-| **Tu API** `GET /api/health` | Comprueba si las credenciales llegan y si puede leer `surveys` / `responses`. |
-
-Desde **Cursor** no hace falta un plugin obligatorio: abre el proyecto en el navegador (Supabase) y usa Table Editor. Si quieres, instala la extensión **“Supabase”** en VS Code/Cursor para atajos; no sustituye al dashboard.
+Si en la terminal estás en `surveyapp-main` y Git dice “not a git repository”, haz **`cd surveyapp`**.
 
 ---
 
-## Conectar el proyecto local a Supabase (checklist)
+## 2. Desarrollo local (servidor + cliente)
 
-1. En Supabase: **Settings → API** → copia **Project URL** y **anon public** (o **service_role** solo para backend).
-2. En tu PC, crea o edita **`.env` en la raíz del proyecto `surveyapp/`** o **`surveyapp/server/.env`** (el código carga primero la raíz y luego `server/.env`; esta última gana si hay claves repetidas):
-
-   - `SUPABASE_URL=https://xxxx.supabase.co`
-   - `SUPABASE_ANON_KEY=eyJ...`
-
-   Opcional pero recomendable si RLS da errores al insertar: **`SUPABASE_SERVICE_ROLE_KEY`** (solo en servidor / Vercel, nunca en `VITE_*`).
-
-3. Aplica el esquema en Supabase: **SQL Editor** → pega el contenido de **`supabase/schema.sql`** → **Run**.
-4. (Opcional) Datos de prueba: ejecuta **`supabase/seed_example.sql`**.
-5. Reinicia el backend: `npm run dev`.
-6. Prueba: `curl http://localhost:3001/api/health` → deberías ver `"database": { "configured": true, "connected": true, ... }`. Si `connected` es `false`, lee `database.error` en la misma respuesta.
-7. Arranca el front en otra terminal: `npm run dev:client` y abre `http://localhost:5173`.
-
----
-
-## Vercel + Supabase
-
-**Importante — carpeta del proyecto:** si el repositorio en GitHub tiene la app dentro de una subcarpeta (por ejemplo `surveyapp/`), en Vercel ve a **Settings → General → Root Directory** y pon **`surveyapp`** (o el nombre de esa carpeta). Si el root queda en el padre, Vercel puede desplegar **otro** `api/` antiguo o no encontrar el tuyo, y `/api/health` seguirá con el JSON corto sin `database` ni `format: "v2"`.
-
-Tras cada cambio en el código: **push a Git** y espera el deploy (o **Redeploy**). En `/api/health` la respuesta nueva incluye **`format": "v2"`** y **`database`**. Si no los ves, el deploy no está usando este código.
-
-1. **Settings → Environment Variables**: añade `SUPABASE_URL` y `SUPABASE_ANON_KEY` o `SUPABASE_SERVICE_ROLE_KEY` (recomendada en servidor si RLS bloquea; nunca en variables `VITE_*`). Activa **Production** (y **Preview** si aplica) y **redeploy**.
-2. Los logs de Postgres (`supabase_admin`, `postgres_exporter`, etc.) **no** prueban que tu app inserte datos; solo actividad interna. Comprueba la tabla `responses` en Table Editor y la respuesta JSON del POST: debe llevar `"storage": "supabase"`. Si ves `"storage": "memory"`, las variables no están disponibles en la función serverless (`process.env`).
-3. Abre `GET https://tu-dominio/api/health`: `database.configured` y `database.connected` deben ser `true`.
-4. Si el INSERT falla por RLS, ejecuta `supabase/fix_rls_anon.sql` en el SQL Editor.
-5. **404 al recargar** `/stats`: el `vercel.json` reescribe rutas del SPA a `index.html`. Tras cambiarlo, vuelve a desplegar.
-6. El frontend llama a `/api` en el **mismo dominio**; `VITE_API_URL` puede ir vacío.
-
----
-
-## Instalación
+**Terminal 1 — API (Express), desde `surveyapp/`:**
 
 ```bash
-# Raíz del proyecto (Express + dependencias compartidas)
-npm install
+cd ruta/a/surveyapp
+npm install          # la primera vez o tras cambiar dependencias
+npm run dev
+```
 
-# Cliente React (Vite)
+- Puerto por defecto: **3001**.
+- Variables: `.env` en la raíz de `surveyapp/` y/o `server/.env`.
+
+**Terminal 2 — Frontend (Vite), desde `surveyapp/`:**
+
+```bash
+cd ruta/a/surveyapp
+npm run dev:client
+```
+
+- Puerto típico: **5173** → abre **http://localhost:5173**.
+- El proxy de Vite envía `/api/*` a `http://localhost:3001`.
+
+**Resumen:** dos terminales, ambas con cwd = **`surveyapp/`**; en el navegador usa el puerto del **cliente** (5173).
+
+---
+
+## 3. Git: sincronizar manualmente tu remoto con otro repo
+
+Útil cuando tienes **dos repos** (por ejemplo el de un compañero con el código actualizado y **el tuyo** conectado a Vercel) y quieres que **tu** `main` quede **igual** al otro.
+
+**Nomenclatura habitual:**
+
+- **`origin`** → repo que quieres usar como **fuente de verdad** (ej. `https://github.com/JanerBus/surveyapp.git`).
+- **`teammate`** (o `mi-repo`, el nombre que elijas) → **tu** repo donde harás push (ej. `https://github.com/xKQAx/surveyapp.git`).
+
+Añade el remoto del compañero si no existe:
+
+```bash
+cd ruta/a/surveyapp
+git remote -v
+git remote add origin https://github.com/ALGUIEN/surveyapp.git    # si hace falta
+git remote add teammate https://github.com/TU_USUARIO/surveyapp.git
+```
+
+**Forzar que tu rama `main` en `teammate` sea una copia exacta de `origin/main`:**
+
+```bash
+git fetch origin
+git checkout main
+git reset --hard origin/main
+git push teammate main --force
+```
+
+- **`git fetch origin`** — trae commits del remoto `origin`.
+- **`git checkout main`** — asegúrate de estar en `main`.
+- **`git reset --hard origin/main`** — tu `main` local = `origin/main` (pierdes commits locales no subidos).
+- **`git push teammate main --force`** — actualiza **tu** GitHub (`teammate`) para que Vercel despliegue ese código.
+
+**Si tu `origin` ya es tu repo y el del compañero tiene otro nombre** (ej. `janerbus`), usa ese nombre en lugar de `origin`:
+
+```bash
+git fetch janerbus
+git checkout main
+git reset --hard janerbus/main
+git push origin main --force
+```
+
+Tras el push, espera el deploy en Vercel o lanza un **Redeploy** manual.
+
+**Historiales no relacionados:** si Git dice `refusing to merge unrelated histories`, o usas `--allow-unrelated-histories` en un merge, o la secuencia `fetch` + `reset --hard` + `push --force` como arriba para **reemplazar** tu `main`.
+
+---
+
+## 4. Instalación (primera vez)
+
+```bash
+cd surveyapp
+npm install
 cd client && npm install && cd ..
 ```
 
-## Desarrollo
+---
 
-| Objetivo | Comando | Notas |
-|----------|---------|--------|
-| Backend (API) | `npm run dev` | Puerto `3001` por defecto. Variables: raíz `.env` y/o `server/.env`. |
-| Solo frontend | `npm run dev:client` | Puerto `5173`. `/api` → proxy a `localhost:3001`. |
-| Ambos | Dos terminales: `npm run dev` y `npm run dev:client` | UI en `http://localhost:5173`. |
-
-## Build y vista “tipo producción” del frontend
+## 5. Build y preview del cliente
 
 ```bash
+cd surveyapp
 npm run build
 npm run preview:client
 ```
 
-## Producción local (Express sirviendo el build)
+## 6. Producción local (Express sirviendo el build)
 
 ```powershell
+cd surveyapp
 $env:NODE_ENV="production"
 npm run build
 node server/index.js
 ```
 
-## Archivos SQL en este repo
+---
 
-| Archivo | Uso |
-|---------|-----|
-| `supabase/schema.sql` | Tablas, columnas extra, índices y políticas RLS mínimas. Ejecutar primero. |
-| `supabase/seed_five_surveys.sql` | **Recomendado:** las 5 encuestas alineadas con la app (borra datos previos en esas tablas). Ejecutar después de `schema.sql` para que envíos y estadísticas funcionen con Supabase. |
-| `supabase/seed_example.sql` | Una sola encuesta de demostración (alternativa antigua). |
-
-## Comprobar la API
+## 7. Comprobar la API en local
 
 ```bash
 curl http://localhost:3001/api/health
 curl http://localhost:3001/api/surveys
 ```
 
-## Emular Vercel en local (opcional)
+---
+
+## 8. Archivos SQL (Supabase)
+
+| Archivo | Uso |
+|---------|-----|
+| `supabase/schema.sql` | Tablas, columnas extra, índices y RLS. Ejecutar primero en el SQL Editor. |
+| `supabase/seed_five_surveys.sql` | Las 5 encuestas alineadas con la app (borra datos previos en esas tablas). Después de `schema.sql`. |
+| `supabase/seed_example.sql` | Una encuesta de demostración (alternativa). |
+| `supabase/fix_rls_anon.sql` | Si fallan los INSERT con la clave `anon`. |
+
+---
+
+## 9. Conectar el proyecto local a Supabase (checklist)
+
+1. Supabase → **Settings → API** → URL y claves.
+2. Crea/edita **`.env`** en `surveyapp/` o `surveyapp/server/.env` (`server/.env` tiene prioridad si repites claves).
+3. Ejecuta **`supabase/schema.sql`** y, si aplica, **`seed_five_surveys.sql`**.
+4. Reinicia `npm run dev` y revisa `GET /api/health` (`database.configured`, `database.connected`).
+
+---
+
+## 10. Vercel + Supabase
+
+- **Root Directory:** si el repo tiene la app en una subcarpeta, en Vercel pon **`surveyapp`** (donde está `vercel.json` y `api/`).
+- **Variables:** `SUPABASE_URL` y clave (`SUPABASE_ANON_KEY`, `SUPABASE_SECRET_KEY`, etc.) en **Environment Variables**; **redeploy** tras cambiarlas.
+- **`/api/health`** en producción debería incluir `"format": "v2"` y el objeto **`database`**. Si no, el deploy no usa este código o el root del proyecto en Vercel es incorrecto.
+- **`VITE_API_URL`** puede ir vacío si front y API comparten dominio.
+
+---
+
+## 11. Emular Vercel en local (opcional)
 
 ```bash
+cd surveyapp
 npx vercel dev
 ```
 
 ---
 
-## Qué hace falta para “manipular la BD desde la aplicación”
+## 12. Cómo encaja todo (resumen)
 
-- **Ya implementado:** enviar respuestas de encuesta (`POST /api/surveys/:id/responses`) → inserta en `responses` en Supabase cuando está configurado.
-- **Para listar/editar encuestas como administrador desde la app:** haría falta nuevas rutas (por ejemplo `POST /api/surveys` persistiendo en `surveys`/`questions`/`options`) y pantallas de admin; no está en el alcance actual del código.
+1. **Supabase** guarda tablas; el **backend** usa `@supabase/supabase-js` con variables de entorno.
+2. El **frontend** solo llama a **`/api/...`**; en desarrollo Vite proxifica `/api` al puerto 3001.
+3. Ver datos en **Supabase → Table Editor**. Crear encuestas nuevas desde la app tipo admin no está implementado en profundidad; puedes usar SQL o ampliar la API.
 
-Si algo falla al guardar, revisa en `GET /api/health` el campo `database.error`, políticas **RLS** en Supabase y que existan **opciones** para preguntas que no son de texto libre.
+Si falla el guardado, revisa `database.error` en `/api/health`, RLS y que existan preguntas/opciones coherentes con el seed.
